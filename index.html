@@ -288,7 +288,7 @@ html.celu input,html.celu select,html.celu textarea{font-size:16px}
    ===================================================================== */
 const VERSION='v1.0';
 const BIN_KEY='$2a$10$8p4t41BnTv.9Ls.4kFLhouDMqJGQEd5LQlBYEz8n1y6nH/3dFq27G';
-const BIN_FIJO='';            /* <- id del bin una vez creado (queda fijo para todos los equipos) */
+const BIN_FIJO='6adf58ffac6210605a534161';            /* <- id del bin una vez creado (queda fijo para todos los equipos) */
 const LS_BIN='wf_mant_bin';
 function binId(){ if(BIN_FIJO) return BIN_FIJO; try{return localStorage.getItem(LS_BIN)||'';}catch(e){return '';} }
 

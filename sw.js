@@ -2,7 +2,7 @@
    Estrategia: la red manda. El cache es solo para poder abrir la app sin
    conexion. Asi nadie queda mirando una version vieja despues de un deploy. */
 
-const CACHE = 'mantenimiento-v1';
+const CACHE = 'mantenimiento-v2';
 const BASE = [
   './',
   './index.html',
