@@ -286,7 +286,7 @@ html.celu input,html.celu select,html.celu textarea{font-size:16px}
    Gastos de mantenimiento + proyectos (planeamiento, puesta en marcha,
    seguimiento). Datos en JSONBin, misma cuenta que el resto de las apps.
    ===================================================================== */
-const VERSION='v1.0';
+const VERSION='v1.1';
 const BIN_KEY='$2a$10$8p4t41BnTv.9Ls.4kFLhouDMqJGQEd5LQlBYEz8n1y6nH/3dFq27G';
 const BIN_FIJO='6adf58ffac6210605a534161';            /* <- id del bin una vez creado (queda fijo para todos los equipos) */
 const LS_BIN='wf_mant_bin';
@@ -308,7 +308,9 @@ const SEC_COL={TER:'#127a4a',EXT:'#2b7bb9',LAM:'#d9793a',IMP:'#7b5ea7',BOL:'#c9a
 const CATS={ELE:'Eléctrico / Electrónico',TRA:'Rodamientos / Transmisión',HID:'Hidráulico / Neumático',MEC:'Mecanizado / Tornería',
   MAT:'Matricería / Cuchillas',SRV:'Servicio técnico externo',INS:'Insumos de taller',EDI:'Obra / Edilicio',OTR:'Otros'};
 const TIPOS={COR:'Correctivo',PRE:'Preventivo',MEJ:'Mejora',PRY:'Proyecto'};
-const PAGOS={B:'B',N:'N','B/N':'B/N'};
+const PAGOS={B:'B · Facturado',N:'N · Sin factura','B/N':'B/N · Parte y parte'};
+const PAGO_COL={B:'#2b7bb9',N:'#d9793a','B/N':'#7b5ea7','—':'#c5d0ca'};
+const pagoTxt=k=>({B:'Facturado',N:'Sin factura','B/N':'Parte y parte'})[k]||'Sin dato';
 const ESTP={IDE:'Idea',EVA:'En evaluación',APR:'Aprobado',EJE:'En ejecución',PEM:'Puesta en marcha',CER:'Cerrado',SUS:'Suspendido'};
 const PRIO={P1:'Alta',P2:'Media',P3:'Baja'};
 const ESTE={pend:'Pendiente',curso:'En curso',hecha:'Hecha'};
@@ -493,7 +495,7 @@ function provNombre(k){ /* nombre más usado para la clave normalizada */
   return Object.entries(c).sort((a,b)=>b[1]-a[1]).map(x=>x[0])[0]||k;}
 function proveedores(){const s={};D.gastos.forEach(g=>{const k=provNorm(g.prov);if(k&&!s[k])s[k]=provNombre(k);});return Object.values(s).sort((a,b)=>a.localeCompare(b));}
 function incompleto(g){const f=[];if(!g.ars)f.push('sin importe');if(!g.desc||g.desc==='??')f.push('sin descripción');
-  if(g.fl&&g.fl.includes('fecha'))f.push('fecha estimada');if(!g.prov)f.push('sin proveedor');if(!g.cat)f.push('sin categoría');return f;}
+  if(g.fl&&g.fl.includes('fecha'))f.push('fecha estimada');if(!g.prov)f.push('sin proveedor');if(!g.pago&&g.fec>='2025-01-01')f.push('sin B/N');if(!g.cat)f.push('sin categoría');return f;}
 function ejecutado(p){let a=0,u=0;D.gastos.forEach(g=>{if(g.proy===p.id){a+=g.ars||0;u+=usdDe(g)||0;}});return {ars:a,usd:u};}
 function avanceFis(p){
   const its=[];(p.etapas||[]).forEach(e=>{if((e.items||[]).length)e.items.forEach(i=>its.push(i.ok?1:0));else its.push(e.est==='hecha'?1:e.est==='curso'?.5:0);});
@@ -509,11 +511,11 @@ function atrasado(p){return p.ff&&p.ff<HOY()&&!['CER','SUS'].includes(p.est);}
 /* ---------------- navegación ---------------- */
 let view='dash';
 const F={per:'12m',pl:'',mon:'USD'};                         /* filtros dashboard */
-const FG={q:'',anio:String(new Date().getFullYear()),mes:'',sec:'',eq:'',prov:'',tipo:'',cat:'',proy:'',pl:'',lim:200}; /* filtros gastos */
+const FG={q:'',anio:String(new Date().getFullYear()),mes:'',sec:'',eq:'',prov:'',tipo:'',cat:'',proy:'',pl:'',pago:'',lim:200}; /* filtros gastos */
 let PRY_ABIERTO=null, PRY_TAB='res';
 $('#nav').onclick=e=>{const b=e.target.closest('button[data-v]');if(!b)return;view=b.dataset.v;if(view!=='pry')PRY_ABIERTO=null;render();window.scrollTo(0,0);};
 $('#fab').onclick=()=>formGasto();
-function irGastos(f){Object.assign(FG,{q:'',anio:'',mes:'',sec:'',eq:'',prov:'',tipo:'',cat:'',proy:'',pl:'',lim:200},f);view='gas';render();window.scrollTo(0,0);}
+function irGastos(f){Object.assign(FG,{q:'',anio:'',mes:'',sec:'',eq:'',prov:'',tipo:'',cat:'',proy:'',pl:'',pago:'',lim:200},f);view='gas';render();window.scrollTo(0,0);}
 
 function render(){
   if(!D||!USER) return;
@@ -541,6 +543,12 @@ function hbars(rows,lbl,opt){
     <span class="b"><i style="width:${(v/mx*100).toFixed(1)}%;${opt.dot?'background:'+opt.dot(k):''}"></i></span>
     <span class="v">${F.mon==='USD'?'U$D ':'$ '}${fK(v)}<small>${(v/tot*100).toFixed(0)}%</small></span>`).join('')+'</div>';
 }
+function splitBN(gs){
+  const b=gs.filter(g=>g.pago==='B').reduce((a,g)=>a+(g.ars||0),0), n=gs.filter(g=>g.pago==='N').reduce((a,g)=>a+(g.ars||0),0);
+  const m=gs.filter(g=>g.pago==='B/N').reduce((a,g)=>a+(g.ars||0),0), t=b+n+m;
+  return `<div class="kpi"><span class="lbl">Facturado (B)</span><b style="color:${PAGO_COL.B}">${fARS(b)}</b><small>${t?(b/t*100).toFixed(0)+'% de lo con dato':''}</small></div>
+    <div class="kpi"><span class="lbl">Sin factura (N)</span><b style="color:${PAGO_COL.N}">${fARS(n)}</b><small>${t?(n/t*100).toFixed(0)+'% de lo con dato':''}${m?' · B/N '+fARS(m):''}</small></div>`;
+}
 function chartMensual(desde,hasta,gs){
   /* barras apiladas por sector, mes a mes */
   const meses=[];let d=new Date(desde.slice(0,7)+'-01T12:00');const fin=hasta.slice(0,7);
@@ -563,6 +571,19 @@ function chartMensual(desde,hasta,gs){
   s+=`<line x1="${pl}" x2="${W-6}" y1="${y(prom)}" y2="${y(prom)}" stroke="#28352f" stroke-dasharray="4 4" stroke-width="1.2"/><text x="${W-8}" y="${y(prom)-5}" text-anchor="end" font-size="11" fill="#28352f">promedio ${fK(prom)}</text></svg>`;
   const usados=secs.filter(k=>meses.some(m=>M[m][k]));
   return s+'<div class="leg">'+usados.map(k=>`<span><i class="dot" style="background:${SEC_COL[k]}"></i>${SECTORES[k]}</span>`).join('')+'</div>';
+}
+function chartBN(desde,hasta,gs){
+  const meses=[];let d=new Date(desde.slice(0,7)+'-01T12:00');const fin=hasta.slice(0,7);
+  while(d.toISOString().slice(0,7)<=fin){meses.push(d.toISOString().slice(0,7));d.setMonth(d.getMonth()+1);}
+  const M={};meses.forEach(m=>M[m]={B:0,N:0,'B/N':0,'—':0});
+  gs.forEach(g=>{const m=g.fec.slice(0,7);if(M[m])M[m][g.pago||'—']+=val(g,F.mon);});
+  const W=480,H=150,pl=8,pb=20,bw=(W-pl*2)/meses.length;const mx=Math.max(1,...meses.map(m=>Object.values(M[m]).reduce((a,b)=>a+b,0)));
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="B y N por mes">`;
+  meses.forEach((m,i)=>{let y=H-pb;const x=pl+i*bw+bw*.15,w=bw*.7;
+    ['B','B/N','N','—'].forEach(k=>{const v=M[m][k];if(!v)return;const h=(H-pb-6)*v/mx;y-=h;
+      s+=`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${PAGO_COL[k]}"><title>${mesTxt(m)} · ${k==='—'?'Sin dato':pagoTxt(k)}: ${F.mon==='USD'?'U$D':'$'} ${f0(v)}</title></rect>`;});
+    if(meses.length<=12||i%2===0)s+=`<text x="${x+w/2}" y="${H-6}" text-anchor="middle" font-size="9.5" fill="#42544c">${MESES[+m.slice(5)-1]}</text>`;});
+  return s+`</svg><div class="leg">${['B','N','B/N','—'].map(k=>`<span><i class="dot" style="background:${PAGO_COL[k]}"></i>${k==='—'?'Sin dato':k+' '+pagoTxt(k).toLowerCase()}</span>`).join('')}</div>`;
 }
 function rDash(){
   const el=$('#v-dash'); const p=periodo(); const anios=[...new Set(D.gastos.map(g=>g.fec.slice(0,4)))].sort().reverse();
@@ -594,17 +615,19 @@ function rDash(){
   </div>
   ${sinTC?`<p class="mini" style="margin:-6px 0 12px">${sinTC} gasto(s) sin tipo de cambio todavía (se completa solo al conectarse); por ahora no suman en U$D.</p>`:''}
   <div class="kpis">
-    <div class="kpi dark"><span class="lbl">Gasto ${MESES[+mesAct.slice(5)-1].toLowerCase()} ${mesAct.slice(0,4)}</span><b>${fARS(mesArs)}</b><small>${fUSD(mesUsd)} · ${mesG.length} gastos</small></div>
+    <div class="kpi dark"><span class="lbl">Gasto ${MESES[+mesAct.slice(5)-1].toLowerCase()} ${mesAct.slice(0,4)}</span><b>${fARS(mesArs)}</b><small>${fUSD(mesUsd)} · ${mesG.length} gastos<br>B ${fARS(mesG.filter(g=>g.pago==='B').reduce((a,g)=>a+g.ars,0))} · N ${fARS(mesG.filter(g=>g.pago==='N').reduce((a,g)=>a+g.ars,0))}</small></div>
     <div class="kpi"><span class="lbl">Acumulado ${y} (U$D)</span><b>${f0(ytd)}</b><small>${varp==null?'sin dato del año anterior':`<span class="${varp>0?'up':'down'}">${varp>0?'▲':'▼'} ${Math.abs(varp).toFixed(0)}%</span> vs mismo período ${y-1} (${f0(ytdAnt)})`}</small></div>
     <div class="kpi"><span class="lbl">Promedio mensual 12m</span><b>U$D ${f0(prom12)}</b><small>≈ ${fARS(prom12*(tcDia(h)||0))} al TC de hoy</small></div>
     <div class="kpi ${act.some(atrasado)?'warn':''}"><span class="lbl">Proyectos activos</span><b>${act.length}</b><small>U$D ${f0(ejeAct)} ejecutado de ${f0(presAct)} presupuestado</small></div>
-    <div class="kpi ${inc?'warn':'ok'}"><span class="lbl">Gastos a revisar</span><b>${inc}</b><small>${inc?'sin importe, descripción o proveedor':'todo completo'}</small></div>
+    <div class="kpi ${inc?'warn':'ok'}"><span class="lbl">Gastos a revisar</span><b>${inc}</b><small>${inc?'sin importe, B/N, descripción o proveedor':'todo completo'}</small></div>
   </div>
   <div class="card"><h2>Gasto mensual por sector <span class="r">${p.txt} · total ${per}</span></h2><div id="d-chart">${chartMensual(p.desde,p.hasta,gs)}</div></div>
   <div class="g2">
     <div class="card"><h2>Por sector</h2>${hbars(sumar(gs,g=>g.sec),k=>SECTORES[k]||k,{dot:k=>SEC_COL[k],click:1,n:12})}</div>
     <div class="card"><h2>Equipos con más gasto <span class="r">Pareto</span></h2><div id="d-eq">${hbars(sumar(gs,g=>g.eq),k=>(eqDe(k)||{}).nom||k,{click:1})}</div></div>
     <div class="card"><h2>Proveedores principales</h2><div id="d-prov">${hbars(sumar(gs,g=>provNorm(g.prov)),k=>provNombre(k),{click:1})}</div></div>
+    <div class="card"><h2>Facturado (B) vs. sin factura (N)</h2><div id="d-bn">${hbars(sumar(gs,g=>g.pago||'—'),k=>(k==='—'?'Sin dato':k+' · '+pagoTxt(k)),{dot:k=>PAGO_COL[k],click:1})}</div>
+      <h2 style="margin-top:18px">B / N por mes</h2>${chartBN(p.desde,p.hasta,gs)}</div>
     <div class="card"><h2>Por categoría</h2><div id="d-cat">${hbars(sumar(gs,g=>g.cat||'OTR'),k=>CATS[k]||k,{click:1})}</div>
       <h2 style="margin-top:18px">Por tipo de intervención</h2>${hbars(tipos,k=>TIPOS[k]||'Sin clasificar',{})}</div>
   </div>
@@ -629,6 +652,7 @@ function rDash(){
     else if(h2.startsWith('Equipos'))irGastos({eq:k,anio:anioP});
     else if(h2.startsWith('Proveedores'))irGastos({prov:k,anio:anioP});
     else if(h2.startsWith('Por categ'))irGastos({cat:k,anio:anioP,pl:F.pl});
+    else if(h2.startsWith('Facturado'))irGastos({pago:k==='—'?'-':k,anio:anioP,pl:F.pl});
   }));
   $('#d-chart').onclick=e=>{const r=e.target.closest('[data-mes]');if(r)irGastos({anio:r.dataset.mes.slice(0,4),mes:r.dataset.mes.slice(5,7),pl:F.pl});};
   el.querySelectorAll('[data-pry]').forEach(x=>x.onclick=()=>{PRY_ABIERTO=x.dataset.pry;PRY_TAB='res';view='pry';render();});
@@ -642,7 +666,7 @@ function filtrarGastos(){
   const q=FG.q.trim().toLowerCase();
   return D.gastos.filter(g=>(!FG.anio||g.fec.startsWith(FG.anio))&&(!FG.mes||g.fec.slice(5,7)===FG.mes)&&(!FG.sec||g.sec===FG.sec)&&
     (!FG.eq||g.eq===FG.eq)&&(!FG.prov||provNorm(g.prov)===FG.prov)&&(!FG.tipo||(FG.tipo==='-'?!g.tipo:g.tipo===FG.tipo))&&
-    (!FG.cat||(g.cat||'OTR')===FG.cat)&&(!FG.proy||g.proy===FG.proy)&&(!FG.pl||g.pl===FG.pl)&&
+    (!FG.cat||(g.cat||'OTR')===FG.cat)&&(!FG.pago||(FG.pago==='-'?!g.pago:g.pago===FG.pago))&&(!FG.proy||g.proy===FG.proy)&&(!FG.pl||g.pl===FG.pl)&&
     (!q||[g.desc,g.det,g.prov,g.comp,eqNom(g),g.maq].join(' ').toLowerCase().includes(q)))
     .sort((a,b)=>a.fec===b.fec?(b.ts||0)-(a.ts||0):(a.fec<b.fec?1:-1));
 }
@@ -663,12 +687,13 @@ function rGastos(){
       <label><span class="lbl">Proveedor</span><select id="fprov">${opts(prs,FG.prov,'Todos')}</select></label>
       <label><span class="lbl">Tipo</span><select id="ftipo">${opts({...TIPOS,'-':'Sin clasificar'},FG.tipo,'Todos')}</select></label>
       <label><span class="lbl">Categoría</span><select id="fcat">${opts(CATS,FG.cat,'Todas')}</select></label>
+      <label><span class="lbl">B / N</span><select id="fpago">${opts({...PAGOS,'-':'Sin dato'},FG.pago,'Todos')}</select></label>
       ${D.proyectos.length?`<label><span class="lbl">Proyecto</span><select id="fproy">${opts(pys,FG.proy,'Todos')}</select></label>`:''}
       <button class="tbtn" id="flimpiar">Limpiar</button>
       <button class="btn solo-carga" id="gnuevo">+ Cargar gasto</button>
     </div></div><div id="glist"></div>`;
   const bind=(id,k,ev)=>{const x=$('#'+id);if(x)x.addEventListener(ev||'change',e=>{FG[k]=e.target.value;FG.lim=200;lista();});};
-  bind('fanio','anio');bind('fmes','mes');bind('fpl','pl');bind('fsec','sec');bind('feq','eq');bind('fprov','prov');bind('ftipo','tipo');bind('fcat','cat');bind('fproy','proy');
+  bind('fanio','anio');bind('fmes','mes');bind('fpl','pl');bind('fsec','sec');bind('feq','eq');bind('fprov','prov');bind('ftipo','tipo');bind('fcat','cat');bind('fpago','pago');bind('fproy','proy');
   let tq;$('#fq').oninput=e=>{clearTimeout(tq);tq=setTimeout(()=>{FG.q=e.target.value;FG.lim=200;lista();},200);};
   $('#flimpiar').onclick=()=>irGastos({});
   const gn=$('#gnuevo');if(gn)gn.onclick=()=>formGasto();
@@ -682,7 +707,8 @@ function lista(){
   el.innerHTML=`<div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
      <div class="kpi"><span class="lbl">Gastos</span><b>${gs.length}</b></div>
      <div class="kpi"><span class="lbl">Total pesos</span><b>${fARS(tA)}</b></div>
-     <div class="kpi"><span class="lbl">Total U$D</span><b>${f0(tU)}</b><small>al oficial de cada fecha</small></div></div>
+     <div class="kpi"><span class="lbl">Total U$D</span><b>${f0(tU)}</b><small>al oficial de cada fecha</small></div>
+     ${splitBN(gs)}</div>
   <div class="card" style="padding:0;overflow:hidden"><div class="tw"><table>
     <thead><tr><th>Fecha</th><th>Equipo / sector</th><th>Descripción</th><th class="hide-m">Proveedor</th><th class="hide-m">Tipo</th><th class="n">Pesos</th><th class="n hide-m">U$D</th></tr></thead>
     <tbody>${v.map(g=>{const inc=incompleto(g).length&&!g.ok;const p=g.proy&&pryDe(g.proy);return `<tr class="clk" data-g="${g.id}">
@@ -691,7 +717,7 @@ function lista(){
       <td>${esc(g.desc||'—')}${inc?' <span class="tag warn">revisar</span>':''}${g.det?`<span class="det">${esc(g.det)}</span>`:''}${p?`<span class="det">▸ ${esc(p.nom)}</span>`:''}</td>
       <td class="hide-m">${esc(g.prov||'—')}${g.comp?`<span class="det">${esc(g.comp)}</span>`:''}</td>
       <td class="hide-m">${g.tipo?`<span class="tag ${g.tipo}">${TIPOS[g.tipo]}</span>`:''}${g.cat?`<span class="det">${esc(CATS[g.cat]||'')}</span>`:''}</td>
-      <td class="n">${fARS(g.ars)}${g.pago?`<span class="det">${esc(g.pago)}</span>`:''}</td><td class="n hide-m">${f0(usdDe(g))}</td></tr>`;}).join('')}
+      <td class="n">${fARS(g.ars)}<span class="det">${g.pago?`<b style="color:${PAGO_COL[g.pago]}">${esc(g.pago)}</b> ${pagoTxt(g.pago).toLowerCase()}`:''}</span></td><td class="n hide-m">${f0(usdDe(g))}</td></tr>`;}).join('')}
     <tr class="sum"><td colspan="5" class="hide-m">Total (${gs.length})</td><td class="n">${fARS(tA)}</td><td class="n hide-m">${f0(tU)}</td></tr></tbody></table></div></div>
   ${gs.length>FG.lim?`<div style="text-align:center"><button class="btn ghost" id="gmas">Ver ${Math.min(200,gs.length-FG.lim)} más (${gs.length-FG.lim} restantes)</button></div>`:''}`;
   el.querySelectorAll('[data-g]').forEach(r=>r.onclick=()=>formGasto(r.dataset.g));
@@ -726,7 +752,7 @@ function formGasto(id,pre){
     <label><span class="lbl">Importe $ *</span><input class="num" id="g-ars" inputmode="decimal" value="${g.ars?String(g.ars).replace('.',','):''}" placeholder="0"></label>
     <label><span class="lbl">Tipo de cambio</span><input class="num" id="g-tc" inputmode="decimal" value="${g.tc?String(g.tc).replace('.',','):''}" placeholder="${tcDia(g.fec)?f2(tcDia(g.fec)):'oficial del día'}"></label>
     <label><span class="lbl">Equivale U$D</span><input class="num" id="g-usd" readonly></label>
-    <label><span class="lbl">Tipo de pago</span><select id="g-pago">${opts(PAGOS,g.pago,'—')}</select></label>
+    <label><span class="lbl">B / N *</span><select id="g-pago" style="font-weight:600">${opts(PAGOS,g.pago,'Elegí…')}</select></label>
     <label><span class="lbl">Horas de máquina parada</span><input class="num" id="g-hp" inputmode="decimal" value="${g.hp||''}" placeholder="0"></label>
     <label><span class="lbl">Responsable</span><input id="g-resp" value="${esc(g.resp||'')}"></label>
     <label><span class="lbl">Proyecto</span><select id="g-proy"><option value="">— No es de un proyecto —</option>${pys.map(p=>`<option value="${p.id}"${p.id===g.proy?' selected':''}>${esc(p.nom)}</option>`).join('')}</select></label>
@@ -758,6 +784,7 @@ function formGasto(id,pre){
       resp:$('#g-resp').value.trim()||undefined,proy:$('#g-proy').value||undefined,et:($('#g-proy').value&&$('#g-et').value)||undefined};
     const tcm=pnum($('#g-tc').value), tcd=tcDia(r.fec); r.tc=tcm||(tcd?Math.round(tcd*100)/100:undefined);
     if(!r.fec||!r.sec||!r.desc||!(r.ars>0)){toast('Faltan fecha, sector, descripción o importe');return null;}
+    if(!r.pago&&(!id||r.fec>='2025-01-01')){toast('Indicá si es B (facturado) o N (sin factura)');$('#g-pago').focus();return null;}
     return r;
   };
   const guardar=otro=>{const r=leer();if(!r)return;
@@ -1085,8 +1112,8 @@ $('#fileImp').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new Fi
 $('#btnCsv').onclick=()=>{
   const gs=view==='gas'?filtrarGastos():D.gastos.slice().sort((a,b)=>a.fec<b.fec?1:-1);
   const c=s=>'"'+String(s==null?'':s).replace(/"/g,'""')+'"';const n=v=>v==null||isNaN(v)?'':String(Math.round(v*100)/100).replace('.',',');
-  const rows=[['Fecha','Planta','Sector','Equipo','Descripción','Detalle','Tipo','Categoría','Proveedor','Comprobante','Pago','Importe $','TC','U$D','Horas parada','Proyecto','Responsable']]
-   .concat(gs.map(g=>[g.fec,PLANTAS[g.pl]||'',SECTORES[g.sec]||'',eqNom(g),g.desc,g.det,TIPOS[g.tipo]||'',CATS[g.cat]||'',g.prov,g.comp,g.pago,n(g.ars),n(tcDe(g)),n(usdDe(g)),g.hp||'',(pryDe(g.proy)||{}).nom||'',g.resp]));
+  const rows=[['Fecha','Planta','Sector','Equipo','Descripción','Detalle','Tipo','Categoría','Proveedor','Comprobante','B/N','Importe $','TC','U$D','Horas parada','Proyecto','Responsable']]
+   .concat(gs.map(g=>[g.fec,PLANTAS[g.pl]||'',SECTORES[g.sec]||'',eqNom(g),g.desc,g.det,TIPOS[g.tipo]||'',CATS[g.cat]||'',g.prov,g.comp,g.pago?g.pago+' '+pagoTxt(g.pago):'',n(g.ars),n(tcDe(g)),n(usdDe(g)),g.hp||'',(pryDe(g.proy)||{}).nom||'',g.resp]));
   bajarArchivo('mantenimiento-gastos-'+HOY()+'.csv','﻿'+rows.map(r=>r.map((v,i)=>[11,12,13].includes(i)?v:c(v)).join(';')).join('\r\n'),'text/csv;charset=utf-8');
 };
 
